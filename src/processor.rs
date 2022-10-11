@@ -1,4 +1,4 @@
-use crate::error::MailError::MotWritable;
+use crate::error::MailError::NotWritable;
 use crate::instruction::MailInstruction;
 use crate::state::{ DataLength, Mail, MailAccount};
 use borsh::{ BorshDeserialize, BorshSerialize};
@@ -15,7 +15,7 @@ use std::convert::TryFrom;
 pub struct Processor;
 impl Processor {
     pub fn process (
-        program_id: &Pubkey;
+        program_id: &Pubkey,
         accounts: &[AccountInfo],
         instruction_data: &[u8],
     ) -> ProgramResult {
@@ -24,11 +24,11 @@ impl Processor {
         match instruction {
             MailInstruction::InitAccount => {
                 msg!("Instruction: InitAccount");
-                Self::process_init_account(accounts, program_id)
+                Self::process_init_account(&accounts[0], program_id)
             },
             MailInstruction::SendMail {mail} => {
                 msg!("Instruction: Send Mail");
-                Self::process_send_mail(accounts, mail, program_id)
+                Self::process_send_mail(accounts, &mail, program_id)
             }
         }
     }
@@ -52,15 +52,22 @@ impl Processor {
             subject: String::from("Welcome to SolMail"),
             body: String::from("This is the start of your private messages on SolMail
             Lorem, ipsum dolor sit amet consectetur adipisicing elit. Quos ut labore, debitis assumenda, dolorem nulla facere soluta exercitationem excepturi provident ipsam reprehenderit repellat quisquam corrupti commodi fugiat iusto quae voluptates!"),
-            sent_date: "9/29/2021, 3:58:02 PM"
-        }
+            sent_date: "9/29/2021, 3:58:02 PM".to_string()
+        };
 
         let mail_account = MailAccount {
-            inbox: Vec![welcome_mail],
+            inbox: vec![welcome_mail],
             sent: Vec::new(),
-        }
+        };
 
-        mail_account.serialize(&mut &mut account.data.borrow_mut()[..])?;
+        let data_length = DataLength {
+            length: u32::try_from(get_instance_packed_len(&mail_account)?).unwrap(),
+          };
+      
+          let offset: usize = 4;
+          data_length.serialize(&mut &mut account.data.borrow_mut()[..offset])?;
+          mail_account.serialize(&mut &mut account.data.borrow_mut()[offset..])?;
+      
         Ok(())
     }
 
@@ -91,7 +98,7 @@ impl Processor {
 
         let mut sender_data;
         if data_length.length > 0 {
-            let length = usize::try_from(data.length.length + u32::try_from(offset).unwrap()).unwrap();
+            let length = usize::try_from(data_length.length + u32::try_from(offset).unwrap()).unwrap();
             sender_data = MailAccount::try_from_slice(&sender_account.data.borrow()[offset..length])?;
         } else {
             sender_data = MailAccount {
@@ -103,9 +110,9 @@ impl Processor {
         sender_data.sent.push(mail.clone());
         let data_length = DataLength {
             length: u32::try_from(get_instance_packed_len(&sender_data)?).unwrap(),
-        }
-        data.length.serialize(&mut &mut sender_data.data.borrow_mut()[..offset])?;
-        sender.data.serialize(&mut &mut sender_account.data.borrow_mut()[offset..])?;
+        };
+        data_length.serialize(&mut &mut sender_account.data.borrow_mut()[..offset])?;
+        sender_data.serialize(&mut &mut sender_account.data.borrow_mut()[offset..])?;
 
         let mut receiver_data;
         if data_length.length > 0 {

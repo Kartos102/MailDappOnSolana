@@ -1,4 +1,5 @@
-use crate::error::MailError::InvalidInstruction;
+use crate::{error::MailError::InvalidInstruction, state::Mail};
+use borsh::BorshDeserialize;
 use solana_program::program_error::ProgramError;
 
 #[derive(Debug)]
@@ -22,9 +23,9 @@ impl MailInstruction {
     pub fn unpack(input: &[u8]) -> Result<Self, ProgramError> {
         let (tag, rest) = input.split_first().ok_or(InvalidInstruction)?;
 
-        OK(if let 0 = tag {
+        Ok(if let 0 = tag {
             Self::InitAccount
-        } if let 1 = tag {
+        } else if let 1 = tag {
             Self::SendMail{
                 mail: Mail::try_from_slice(&rest)?,
             }
