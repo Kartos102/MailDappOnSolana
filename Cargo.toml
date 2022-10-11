@@ -6,9 +6,10 @@ license = "WTFPL"
 publish = false
 
 [dependencies]
-solana-program = "=1.11.1"
+solana-program = "=1.14.5"
 borsh = "0.9.1"
 borsh-derive = "0.9.1"
+thiserror = "1.0.24"
 
 [features]
 test-bpf = []
