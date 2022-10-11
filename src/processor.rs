@@ -1,14 +1,16 @@
 use crate::error::MailError::MotWritable;
 use crate::instruction::MailInstruction;
-use crate::state::{Mail, MailAccount};
-use borsh::BorshDeserialize;
+use crate::state::{ DataLength, Mail, MailAccount};
+use borsh::{ BorshDeserialize, BorshSerialize};
 use solana_program::{
     account_info::AccountInfo,
+    borsh::get_instance_packed_len,
     entrypoint::ProgramResult,
     msg,
     program_error::ProgramError,
     pubkey::Pubkey,
 };
+use std::convert::TryFrom;
 
 pub struct Processor;
 impl Processor {
@@ -23,6 +25,10 @@ impl Processor {
             MailInstruction::InitAccount => {
                 msg!("Instruction: InitAccount");
                 Self::process_init_account(accounts, program_id)
+            },
+            MailInstruction::SendMail {mail} => {
+                msg!("Instruction: Send Mail");
+                Self::process_send_mail(accounts, mail, program_id)
             }
         }
     }
@@ -55,6 +61,70 @@ impl Processor {
         }
 
         mail_account.serialize(&mut &mut account.data.borrow_mut()[..])?;
+        Ok(())
+    }
+
+    fn process_send_mail(accounts: &[AccountInfo],mail: &Mail, program_id: &Pubkey) -> ProgramResult {
+        let sender_account = &accounts[0];
+
+        if !sender_account.is_writable {
+            return Err(NotWritable.into());
+        }
+
+        if sender_account.owner != program_id {
+            return Err(ProgramError::IncorrectProgramId);
+        }
+
+        let receiver_account = &accounts[1];
+
+        if !receiver_account.is_writable {
+            return Err(NotWritable.into());
+        }
+
+        if receiver_account.owner != program_id {
+            return Err(ProgramError::IncorrectProgramId);
+        }
+
+        let offset: usize = 4;
+
+        let data_length = DataLength::try_from_slice(&sender_account.data.borrow()[..offset])?;
+
+        let mut sender_data;
+        if data_length.length > 0 {
+            let length = usize::try_from(data.length.length + u32::try_from(offset).unwrap()).unwrap();
+            sender_data = MailAccount::try_from_slice(&sender_account.data.borrow()[offset..length])?;
+        } else {
+            sender_data = MailAccount {
+                inbox: Vec::new(),
+                sent: Vec::new(),
+            };
+        }
+
+        sender_data.sent.push(mail.clone());
+        let data_length = DataLength {
+            length: u32::try_from(get_instance_packed_len(&sender_data)?).unwrap(),
+        }
+        data.length.serialize(&mut &mut sender_data.data.borrow_mut()[..offset])?;
+        sender.data.serialize(&mut &mut sender_account.data.borrow_mut()[offset..])?;
+
+        let mut receiver_data;
+        if data_length.length > 0 {
+          let length = usize::try_from(data_length.length + u32::try_from(offset).unwrap()).unwrap();
+          receiver_data = MailAccount::try_from_slice(&receiver_account.data.borrow()[offset..length])?;
+        } else {
+          receiver_data = MailAccount {
+            inbox: Vec::new(),
+            sent: Vec::new(),
+          }
+        }
+        receiver_data.inbox.push(mail.clone());
+      
+        let data_length = DataLength {
+          length: u32::try_from(get_instance_packed_len(&receiver_data)?).unwrap(),
+        };
+        data_length.serialize(&mut &mut receiver_account.data.borrow_mut()[..offset])?;
+        receiver_data.serialize(&mut &mut receiver_account.data.borrow_mut()[offset..])?;
+
         Ok(())
     }
 }

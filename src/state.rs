@@ -15,3 +15,8 @@ pub struct MailAccount {
     pub inbox: Vec<Mail>,
     pub sent: Vec<Mail>,
 }
+
+#[derive(BorshDeserialize, BorshSerialize, Debug)]
+pub struct DataLength {
+    pub length: u32,
+}
